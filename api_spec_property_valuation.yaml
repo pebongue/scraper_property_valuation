@@ -1,0 +1,101 @@
+openapi: 3.0.1
+info:
+  title: Property Valuation API
+  version: 1.0.0
+  description: API to query property valuation data from Ehtekwini Municipality
+servers:
+  - url: http://localhost:8000
+    description: Local server
+
+paths:
+  /properties:
+    get:
+      summary: Get property data
+      parameters:
+        - in: query
+          name: property_type
+          required: true
+          schema:
+            type: string
+          description: Type of property (Full Title Property or Sectional Title Property)
+        - in: query
+          name: volume_no
+          required: true
+          schema:
+            type: string
+          description: Volume number
+        - in: query
+          name: street_address
+          schema:
+            type: string
+          description: Street address of the property
+        - in: query
+          name: min_market_value
+          schema:
+            type: number
+          description: Minimum market value
+        - in: query
+          name: max_market_value
+          schema:
+            type: number
+          description: Maximum market value
+        - in: query
+          name: date_from
+          schema:
+            type: string
+            format: date
+          description: Start date for scraping (YYYY-MM-DD)
+        - in: query
+          name: date_to
+          schema:
+            type: string
+            format: date
+          description: End date for scraping (YYYY-MM-DD)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:    
+              schema:
+                type: object
+                properties:
+                  properties:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        property_type:
+                          type: string
+                        volume_no:
+                          type: string
+                        property_description:
+                          type: string
+                        street_address:
+                          type: string
+                        extent:
+                          type: number
+                        market_value:
+                          type: number
+                        date_scraped:
+                          type: string
+                          format: date
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
