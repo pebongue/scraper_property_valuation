@@ -30,6 +30,8 @@ engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
 Base = declarative_base()
 
+HTML_PARSER = "html.parser"
+
 # The ORM model
 class Property(Base):
     __tablename__ = 'properties'
@@ -58,46 +60,81 @@ http = requests.Session()
 http.mount("https://", adapter)
 http.mount("http://", adapter)
 
-# Alert function
+# Alert function - for illustration: update emails and set pwd local env for this to work
 def send_alert(subject, message):
     msg = EmailMessage()
     msg.set_content(message)
     msg['Subject'] = subject
-    msg['From'] = "alerts@example.com"
-    msg['To'] = "admin@example.com"
+    msg['From'] = "alerts@gmail.com"
+    msg['To'] = "admin@gamil.com"
 
     try:
-        with smtplib.SMTP('smtp.example.com', 587) as server:
+        with smtplib.SMTP('smtp.gmail.com', 587) as server:
             server.starttls()
-            server.login("alerts@example.com", "password")
+            server.login("alerts@gmail.com", os.environ.get('GMAIL_PASSWORD'))
             server.send_message(msg)
         logger.info("Alert sent successfully")
     except Exception as e:
         logger.error(f"Failed to send alert: {str(e)}")
 
-# Scraping function
+# Scrape data
 def scrape_data(property_type, volume_no):
-    url = "https://valuation2017.durban.gov.za/"
+    url = "https://valuation2017.durban.gov.za/FramePages/SearchType.aspx"
     
     try:
-        response = requests.post(url, data={
-            "property_type": property_type,
-            "volume_no": volume_no
-        }, timeout=30)
+        response = requests.get(url, verify=False)
         response.raise_for_status()
         
-        soup = BeautifulSoup(response.text, 'html.parser')
+        soup = BeautifulSoup(response.text, HTML_PARSER)
         
-        # Extract data from the soup object
+        # Find the dropdown list with id='drpSearchType' and select the desired property type
+        dropdown = soup.find('select', {'id': 'drpSearchType'})
+        if dropdown is None:
+            logger.error("Dropdown element not found")
+            return None
+        
+        for option in dropdown.find_all('option'):
+            if option.text.strip() == property_type:
+                option.select(property_type)
+                break
+        
+        # Click on the 'Go' button with id='btnGo'
+        go_button = soup.find('input', {'id': 'btnGo'})
+        response = requests.post(url, data={'__EVENTTARGET': go_button['id']}, verify=False)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, HTML_PARSER)
+        
+        # Find the 'Volume No.'
+        dropdown = soup.find('select', {'id': 'drpVolumeNo'})
+        if dropdown is None:
+            logger.error("Dropdown element not found")
+            return None
+        
+        for option in dropdown.find_all('option'):
+            if option.text.strip() == volume_no:
+                option.select(volume_no)
+                break
+        
+        # Click on the 'Search' button
+        search_button = soup.find('input', {'id': 'btnSearch'})
+        response = requests.post(url, data={'__EVENTTARGET': search_button['id']}, verify=False)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, HTML_PARSER)
+        
+        # Extract data from the search results table
         properties = []
-        for property_element in soup.find_all('div', class_='property'):
+        table = soup.find('table', {'class': 'searchResultTable'})
+        for row in table.find_all('tr')[1:]:  # Skip the header row
+            cells = row.find_all('td')
             property_data = {
                 'property_type': property_type,
                 'volume_no': volume_no,
-                'property_description': property_element.find('span', class_='description').text,
-                'street_address': property_element.find('span', class_='address').text,
-                'extent': float(property_element.find('span', class_='extent').text),
-                'market_value': float(property_element.find('span', class_='value').text),
+                'property_description': cells[1].text.strip(),
+                'street_address': cells[2].text.strip(),
+                'extent': float(cells[5].text.strip()),
+                'market_value': float(cells[6].text.strip()),
             }
             properties.append(property_data)
         
@@ -107,7 +144,7 @@ def scrape_data(property_type, volume_no):
         send_alert("Scraping Error", f"Failed to scrape data for {property_type}, Volume {volume_no}: {str(e)}")
         return None
 
-# Data cleaning function
+# Clean data
 def clean_data(properties):
     cleaned_properties = []
     for prop in properties:
@@ -123,7 +160,7 @@ def clean_data(properties):
         cleaned_properties.append(cleaned_prop)
     return cleaned_properties
 
-# Storing data
+# Store data
 def store_data(properties):
     session = Session()
     try:
@@ -171,6 +208,8 @@ def scheduled_job():
 schedule.every().day.at("02:00").do(scheduled_job)
 
 if __name__ == "__main__":
+    #print(scrape_data('Full Title Property', '1'))  # For testing, uncomment this line
+    scheduled_job()
     while True:
         schedule.run_pending()
         time.sleep(60)
